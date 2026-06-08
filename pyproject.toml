@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fileparser"
+version = "0.1.0"
+description = "File explorer scraping tool for architecture project inventory and RAG ingestion"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pyside6>=6.6",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "typer>=0.9",
+]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+fileparser = "fileparser.main:main"
+fileparser-cli = "fileparser.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+fileparser = ["py.typed", "bundled_config/*.yaml", "bundled_config/templates/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

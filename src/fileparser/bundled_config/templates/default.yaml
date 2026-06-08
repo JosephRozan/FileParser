@@ -1,0 +1,20 @@
+team: default
+project_root_depth: 1
+expected_folders:
+  - path: "01_Admin"
+    required: true
+  - path: "02_Drawings/PDF"
+    required: true
+  - path: "03_Photos"
+    required: false
+  - path: "04_Specs"
+    required: true
+allowed_extensions:
+  - .pdf
+  - .dwg
+  - .docx
+  - .doc
+  - .xlsx
+  - .jpg
+  - .jpeg
+  - .png

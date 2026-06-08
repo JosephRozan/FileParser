@@ -1,0 +1,12 @@
+scan_roots: []
+default_team: default
+project_root_depth: 1
+ignore_patterns:
+  - ".DS_Store"
+  - "Thumbs.db"
+  - "desktop.ini"
+  - "~$*"
+  - "*.tmp"
+max_depth: null
+follow_symlinks: false
+parallel_workers: 1
