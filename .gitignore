@@ -11,3 +11,4 @@ build/FileParser/
 venv/
 reports/
 *.log
+wheels/

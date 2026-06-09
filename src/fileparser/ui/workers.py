@@ -9,11 +9,11 @@ from PySide6.QtCore import QObject, Signal
 from fileparser.analyzer import analyze_scan
 from fileparser.models import ScanResult
 from fileparser.scanner import ScanConfig, Scanner
-from fileparser.schema import FolderTemplate
 
 
 class ScanWorker(QObject):
     progress = Signal(str, int)
+    phase = Signal(str)
     project_found = Signal(str)
     finished = Signal(object)
     error = Signal(str)
@@ -21,14 +21,16 @@ class ScanWorker(QObject):
     def __init__(
         self,
         root: Path,
-        template: FolderTemplate,
+        project_root_depth: int,
+        allowed_extensions: list[str],
         ignore_patterns: list[str],
         max_depth: int | None = None,
         follow_symlinks: bool = False,
     ) -> None:
         super().__init__()
         self.root = root
-        self.template = template
+        self.project_root_depth = project_root_depth
+        self.allowed_extensions = allowed_extensions
         self.ignore_patterns = ignore_patterns
         self.max_depth = max_depth
         self.follow_symlinks = follow_symlinks
@@ -41,7 +43,7 @@ class ScanWorker(QObject):
         try:
             config = ScanConfig(
                 root=self.root,
-                project_root_depth=self.template.project_root_depth,
+                project_root_depth=self.project_root_depth,
                 ignore_patterns=self.ignore_patterns,
                 max_depth=self.max_depth,
                 follow_symlinks=self.follow_symlinks,
@@ -52,8 +54,21 @@ class ScanWorker(QObject):
                 on_project_found=lambda project_id: self.project_found.emit(project_id),
                 should_cancel=lambda: self._cancelled,
             )
-            files, _directories, errors = scanner.scan()
-            result = analyze_scan(self.root, files, self.template, errors)
+            files, directories, errors = scanner.scan()
+            if self._cancelled:
+                return
+            result = analyze_scan(
+                self.root,
+                files,
+                project_root_depth=self.project_root_depth,
+                allowed_extensions=self.allowed_extensions,
+                scan_errors=errors,
+                scan_directories=directories,
+                on_progress=self.phase.emit,
+                should_cancel=lambda: self._cancelled,
+            )
+            if self._cancelled:
+                return
             self.finished.emit(result)
         except Exception as exc:  # noqa: BLE001 — surface to UI
             self.error.emit(str(exc))

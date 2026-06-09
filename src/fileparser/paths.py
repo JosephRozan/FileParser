@@ -39,15 +39,3 @@ def user_data_dir() -> Path:
 def user_settings_path() -> Path:
     return user_data_dir() / "settings.yaml"
 
-
-def user_templates_dir() -> Path:
-    path = user_data_dir() / "templates"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def templates_dir() -> Path:
-    """User templates override bundled defaults when present."""
-    user = user_templates_dir()
-    bundled = default_config_dir() / "templates"
-    return user if any(user.glob("*.yaml")) else bundled

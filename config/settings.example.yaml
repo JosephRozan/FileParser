@@ -1,5 +1,4 @@
 scan_roots: []
-default_team: default
 project_root_depth: 1
 ignore_patterns:
   - ".DS_Store"
@@ -7,6 +6,17 @@ ignore_patterns:
   - "desktop.ini"
   - "~$*"
   - "*.tmp"
+allowed_extensions:
+  - .pdf
+  - .dwg
+  - .docx
+  - .doc
+  - .xlsx
+  - .jpg
+  - .jpeg
+  - .png
 max_depth: null
 follow_symlinks: false
 parallel_workers: 1
+last_scan_root: ""
+last_output_path: ""

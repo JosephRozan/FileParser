@@ -13,13 +13,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from fileparser.models import ComplianceStatus, ProjectReport, ScanResult
+from fileparser.models import ProjectReport, ProjectStatus, ScanResult
 
 STATUS_COLORS = {
-    ComplianceStatus.COMPLIANT: QColor("#2e7d32"),
-    ComplianceStatus.PARTIAL: QColor("#f9a825"),
-    ComplianceStatus.EMPTY: QColor("#c62828"),
-    ComplianceStatus.ERROR: QColor("#6d4c41"),
+    ProjectStatus.NOT_EMPTY: QColor("#2e7d32"),
+    ProjectStatus.EMPTY: QColor("#c62828"),
+    ProjectStatus.ERROR: QColor("#6d4c41"),
+}
+
+STATUS_LABELS = {
+    ProjectStatus.NOT_EMPTY: "Not empty",
+    ProjectStatus.EMPTY: "Empty",
+    ProjectStatus.ERROR: "Error",
 }
 
 
@@ -29,12 +34,9 @@ class ProjectTable(QWidget):
 
     COLUMNS = [
         "Project",
-        "Team",
         "Status",
-        "Compliance %",
         "Files",
-        "Empty",
-        "Missing",
+        "Empty folders",
     ]
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -73,8 +75,7 @@ class ProjectTable(QWidget):
         s = result.summary
         self.summary_label.setText(
             f"Projects: {s['total_projects']} | "
-            f"Compliant: {s.get('compliant', 0)} | "
-            f"Partial: {s.get('partial', 0)} | "
+            f"Not empty: {s.get('not_empty', 0)} | "
             f"Empty: {s.get('empty', 0)} | "
             f"Errors: {s.get('error', 0)} | "
             f"Files: {result.total_files}"
@@ -89,7 +90,7 @@ class ProjectTable(QWidget):
                 p
                 for p in self._projects
                 if query in p.project_id.lower()
-                or query in p.status.value.lower()
+                or query in STATUS_LABELS.get(p.status, p.status.value).lower()
             ]
         self._populate_table()
 
@@ -97,21 +98,17 @@ class ProjectTable(QWidget):
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(self._filtered))
         for row, project in enumerate(self._filtered):
-            compliance_pct = f"{project.compliance_score * 100:.0f}%"
             values = [
                 project.project_id,
-                project.team,
-                project.status.value,
-                compliance_pct,
+                STATUS_LABELS.get(project.status, project.status.value),
                 str(project.file_count),
                 str(len(project.empty_folders)),
-                str(len(project.missing_folders)),
             ]
             for col, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                if col in (3, 4, 5, 6):
+                if col in (2, 3):
                     item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                if col == 2:
+                if col == 1:
                     color = STATUS_COLORS.get(project.status)
                     if color:
                         item.setForeground(color)

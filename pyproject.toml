@@ -30,7 +30,7 @@ fileparser-cli = "fileparser.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-fileparser = ["py.typed", "bundled_config/*.yaml", "bundled_config/templates/*.yaml"]
+fileparser = ["py.typed", "bundled_config/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

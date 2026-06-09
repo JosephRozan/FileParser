@@ -1,12 +1,18 @@
 scan_roots: []
-default_team: default
 project_root_depth: 1
 ignore_patterns:
   - ".DS_Store"
   - "Thumbs.db"
   - "desktop.ini"
-  - "~$*"
-  - "*.tmp"
+allowed_extensions:
+  - .pdf
+  - .dwg
+  - .docx
+  - .doc
+  - .xlsx
+  - .jpg
+  - .jpeg
+  - .png
 max_depth: null
 follow_symlinks: false
 parallel_workers: 1

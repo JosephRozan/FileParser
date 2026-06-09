@@ -1,46 +1,67 @@
-"""Compare scanned projects against expected folder templates."""
+"""Analyze scanned projects for folder occupancy and file inventory."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
-from fileparser.models import (
-    ComplianceStatus,
-    FileEntry,
-    FolderTemplate,
-    ProjectReport,
-    ScanResult,
-)
+from fileparser.models import FileEntry, ProjectReport, ProjectStatus, ScanResult
 from fileparser.scanner import discover_projects, group_files_by_project
+
+AnalyzeProgressCallback = Callable[[str], None]
 
 
 def _normalize_folder(path: str) -> str:
     return path.replace("\\", "/").strip("/")
 
 
-def _folder_has_files(folder: str, files: list[FileEntry]) -> bool:
-    prefix = f"{folder}/"
+def _file_project_relative_path(file_entry: FileEntry, project_path: Path) -> str:
+    file_path = Path(file_entry.absolute_path).resolve()
+    base = project_path.resolve()
+    try:
+        return file_path.relative_to(base).as_posix()
+    except ValueError:
+        rel = file_entry.relative_path.replace("\\", "/")
+        parts = rel.split("/")
+        project_name = base.name
+        if project_name in parts:
+            idx = parts.index(project_name)
+            return "/".join(parts[idx + 1 :])
+        return Path(rel).name
+
+
+def _folders_with_files(files: list[FileEntry], project_path: Path) -> set[str]:
+    """Folders that contain at least one file in their subtree."""
+    folders: set[str] = set()
     for file_entry in files:
-        rel = file_entry.relative_path
-        if rel == folder or rel.startswith(prefix):
-            return True
-    return False
+        rel = _file_project_relative_path(file_entry, project_path)
+        parent = Path(rel).parent.as_posix()
+        if not parent or parent == ".":
+            continue
+        parts = parent.split("/")
+        for i in range(1, len(parts) + 1):
+            folders.add("/".join(parts[:i]))
+    return folders
 
 
-def _collect_present_folders(project_path: Path, files: list[FileEntry]) -> set[str]:
+def _collect_present_folders(
+    project_id: str,
+    files: list[FileEntry],
+    project_path: Path,
+    scan_directories: set[str] | None = None,
+) -> set[str]:
+    """Build folder list from scan data — no second disk walk."""
     present: set[str] = set()
-    if project_path.is_dir():
-        import os
-
-        for dirpath, dirnames, _ in os.walk(project_path):
-            rel = Path(dirpath).relative_to(project_path).as_posix()
-            if rel and rel != ".":
+    prefix = f"{project_id}/"
+    for path in scan_directories or ():
+        norm = _normalize_folder(path)
+        if norm.startswith(prefix):
+            rel = norm[len(prefix) :]
+            if rel:
                 present.add(rel)
-            for name in dirnames:
-                child = f"{rel}/{name}" if rel and rel != "." else name
-                present.add(child)
     for file_entry in files:
-        parent = Path(file_entry.relative_path).parent.as_posix()
+        rel = _file_project_relative_path(file_entry, project_path)
+        parent = Path(rel).parent.as_posix()
         if parent and parent != ".":
             present.add(parent)
             parts = parent.split("/")
@@ -49,19 +70,19 @@ def _collect_present_folders(project_path: Path, files: list[FileEntry]) -> set[
     return {_normalize_folder(p) for p in present if p and p != "."}
 
 
-def _empty_folders(present_folders: set[str], files: list[FileEntry]) -> list[str]:
-    empty: list[str] = []
-    for folder in sorted(present_folders):
-        if not _folder_has_files(folder, files):
-            empty.append(folder)
-    return empty
+def _empty_folders(
+    present_folders: set[str], files: list[FileEntry], project_path: Path
+) -> list[str]:
+    with_files = _folders_with_files(files, project_path)
+    return sorted(folder for folder in present_folders if folder not in with_files)
 
 
 def analyze_project(
     project_id: str,
     project_path: Path,
     files: list[FileEntry],
-    template: FolderTemplate,
+    allowed_extensions: list[str] | None = None,
+    scan_directories: set[str] | None = None,
 ) -> ProjectReport:
     errors: list[str] = []
     if not project_path.exists():
@@ -69,58 +90,39 @@ def analyze_project(
         return ProjectReport(
             project_id=project_id,
             project_path=str(project_path),
-            team=template.team,
-            compliance_score=0.0,
-            status=ComplianceStatus.ERROR,
+            status=ProjectStatus.ERROR,
             file_count=0,
             errors=errors,
         )
 
-    present_folders = _collect_present_folders(project_path, files)
-    expected_paths = [_normalize_folder(f.path) for f in template.expected_folders]
-    required_paths = [_normalize_folder(f.path) for f in template.expected_folders if f.required]
-
-    missing = [path for path in required_paths if path not in present_folders]
-    unexpected = sorted(present_folders - set(expected_paths)) if expected_paths else []
-
-    required_present = sum(1 for path in required_paths if path in present_folders)
-    compliance_score = (
-        required_present / len(required_paths) if required_paths else 1.0
+    present_folders = _collect_present_folders(
+        project_id, files, project_path, scan_directories
     )
-
-    empty = _empty_folders(present_folders, files)
+    empty = _empty_folders(present_folders, files, project_path)
 
     extensions: dict[str, int] = {}
     for file_entry in files:
         ext = file_entry.extension or "(no ext)"
         extensions[ext] = extensions.get(ext, 0) + 1
 
-    allowed = {ext.lower() for ext in template.allowed_extensions}
+    allowed = {ext.lower() for ext in (allowed_extensions or [])}
     rag_candidates = (
         [f for f in files if f.extension.lower() in allowed]
         if allowed
         else list(files)
     )
 
-    if not files:
-        status = ComplianceStatus.EMPTY
-    elif compliance_score >= 1.0 and not empty:
-        status = ComplianceStatus.COMPLIANT
-    else:
-        status = ComplianceStatus.PARTIAL
+    status = ProjectStatus.EMPTY if not files else ProjectStatus.NOT_EMPTY
 
     return ProjectReport(
         project_id=project_id,
         project_path=str(project_path),
-        team=template.team,
-        compliance_score=round(compliance_score, 4),
         status=status,
         file_count=len(files),
         empty_folders=empty,
-        missing_folders=missing,
-        unexpected_folders=unexpected,
         present_folders=sorted(present_folders),
         files_by_extension=extensions,
+        files=list(files),
         rag_candidates=rag_candidates,
         errors=errors,
     )
@@ -129,21 +131,39 @@ def analyze_project(
 def analyze_scan(
     scan_root: Path,
     files: list[FileEntry],
-    template: FolderTemplate,
+    project_root_depth: int = 1,
+    allowed_extensions: list[str] | None = None,
     scan_errors: list[str] | None = None,
+    scan_directories: set[str] | None = None,
+    on_progress: AnalyzeProgressCallback | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> ScanResult:
-    result = ScanResult.new(str(scan_root), template.team)
+    result = ScanResult.new(str(scan_root))
     result.total_files = len(files)
     result.scan_errors = list(scan_errors or [])
 
     grouped = group_files_by_project(files)
-    discovered = discover_projects(scan_root, template.project_root_depth)
+    discovered = discover_projects(scan_root, project_root_depth)
     project_ids = sorted(set(discovered) | set(grouped.keys()))
+    total = len(project_ids)
 
-    for project_id in project_ids:
+    if on_progress:
+        on_progress("Analyzing projects…")
+
+    for index, project_id in enumerate(project_ids, start=1):
+        if should_cancel and should_cancel():
+            break
+        if on_progress:
+            on_progress(f"Analyzing {project_id} ({index}/{total})")
         project_path = scan_root / project_id
         project_files = grouped.get(project_id, [])
-        report = analyze_project(project_id, project_path, project_files, template)
+        report = analyze_project(
+            project_id,
+            project_path,
+            project_files,
+            allowed_extensions=allowed_extensions,
+            scan_directories=scan_directories,
+        )
         result.projects.append(report)
 
     return result
